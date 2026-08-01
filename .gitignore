@@ -1,0 +1,15 @@
+# Rust build artifacts
+/target
+**/target
+
+# Compiled Wasm
+*.wasm
+
+# Backup and editor files
+*.rs.bk
+*~
+.DS_Store
+
+# Local environment and secrets
+.env
+*.pem
