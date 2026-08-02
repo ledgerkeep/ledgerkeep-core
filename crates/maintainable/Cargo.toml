@@ -1,0 +1,16 @@
+[package]
+name = "maintainable"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91.0"
+license = "Apache-2.0"
+description = "LedgerKeep maintenance standard: a library host contracts implement to expose permissionless self-maintenance."
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
