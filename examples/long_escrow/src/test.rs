@@ -1,10 +1,64 @@
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
     token::{StellarAssetClient, TokenClient},
-    Address, Env, Vec,
+    Address, Bytes, Env, Vec,
 };
 
 use crate::{EscrowError, LongEscrow, LongEscrowClient};
+
+/// A stand-in for the registry that records the arguments it was called with.
+///
+/// The escrow calls the registry through a client interface rather than a crate
+/// dependency, so there is no way to link the real registry contract into this
+/// test. `register` here keeps the real one's signature and its
+/// `contract.require_auth()`, which is the part these tests exercise: that the
+/// cross-call presents the escrow's own address as the registering party.
+mod fake_registry {
+    use soroban_sdk::{contract, contractimpl, contracttype, Address, Bytes, Env, Vec};
+
+    #[contracttype]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct Call {
+        pub contract: Address,
+        pub keys_xdr: Vec<Bytes>,
+        pub threshold: u32,
+        pub extend_to: u32,
+    }
+
+    #[contracttype]
+    pub enum Key {
+        Last,
+    }
+
+    #[contract]
+    pub struct FakeRegistry;
+
+    #[contractimpl]
+    impl FakeRegistry {
+        pub fn register(
+            env: Env,
+            contract: Address,
+            keys_xdr: Vec<Bytes>,
+            threshold: u32,
+            extend_to: u32,
+        ) {
+            contract.require_auth();
+            env.storage().instance().set(
+                &Key::Last,
+                &Call {
+                    contract,
+                    keys_xdr,
+                    threshold,
+                    extend_to,
+                },
+            );
+        }
+
+        pub fn last(env: Env) -> Option<Call> {
+            env.storage().instance().get(&Key::Last)
+        }
+    }
+}
 
 struct Fixture {
     env: Env,
@@ -126,5 +180,84 @@ fn rejects_double_initialize_and_bad_amounts() {
             .try_initialize(&f.buyer, &f.seller, &f.approver, &f.token, &amounts(&f.env))
             .err(),
         Some(Ok(EscrowError::AlreadyInitialized))
+    );
+}
+
+/// The escrow's real manifest: the three ledger keys `impl_maintainable!`
+/// extends, XDR-encoded. In order: `ScVal::LedgerKeyContractInstance` (the
+/// instance entry holding `Config`), then `DataKey::Balance` and
+/// `DataKey::Milestones`, each of which encodes as a one-element `ScVal::Vec`
+/// holding a symbol. `scripts/init_testnet.sh` passes these same three values.
+fn manifest(env: &Env) -> Vec<Bytes> {
+    let mut keys = Vec::new(env);
+    keys.push_back(Bytes::from_array(env, &[0x00, 0x00, 0x00, 0x14]));
+    keys.push_back(Bytes::from_array(
+        env,
+        &[
+            0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+            0x00, 0x0f, 0x00, 0x00, 0x00, 0x07, 0x42, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x00,
+        ],
+    ));
+    keys.push_back(Bytes::from_array(
+        env,
+        &[
+            0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+            0x00, 0x0f, 0x00, 0x00, 0x00, 0x0a, 0x4d, 0x69, 0x6c, 0x65, 0x73, 0x74, 0x6f, 0x6e,
+            0x65, 0x73, 0x00, 0x00,
+        ],
+    ));
+    keys
+}
+
+#[test]
+fn register_with_presents_the_escrows_own_address() {
+    let f = setup();
+    let escrow = LongEscrowClient::new(&f.env, &f.escrow_id);
+    escrow.initialize(&f.buyer, &f.seller, &f.approver, &f.token, &amounts(&f.env));
+
+    let registry_id = f.env.register(fake_registry::FakeRegistry, ());
+    let registry = fake_registry::FakeRegistryClient::new(&f.env, &registry_id);
+
+    let keys = manifest(&f.env);
+    escrow.register_with(&registry_id, &keys, &100_000, &500_000);
+
+    let call = registry.last().unwrap();
+    // The registry is told the escrow is the contract being registered. That is
+    // what makes its `require_auth()` satisfiable: the call came from inside the
+    // escrow, so the escrow is the invoker.
+    assert_eq!(call.contract, f.escrow_id);
+    assert_eq!(call.keys_xdr, keys);
+    assert_eq!(call.threshold, 100_000);
+    assert_eq!(call.extend_to, 500_000);
+}
+
+#[test]
+fn register_with_needs_the_buyers_authorization() {
+    let f = setup();
+    let escrow = LongEscrowClient::new(&f.env, &f.escrow_id);
+    escrow.initialize(&f.buyer, &f.seller, &f.approver, &f.token, &amounts(&f.env));
+    let registry_id = f.env.register(fake_registry::FakeRegistry, ());
+    let registry = fake_registry::FakeRegistryClient::new(&f.env, &registry_id);
+
+    // Withdraw the blanket authorization the fixture installs. The buyer's
+    // `require_auth()` now has nothing to satisfy it.
+    f.env.set_auths(&[]);
+    assert!(escrow
+        .try_register_with(&registry_id, &manifest(&f.env), &100_000, &500_000)
+        .is_err());
+    assert_eq!(registry.last(), None);
+}
+
+#[test]
+fn register_with_rejects_an_uninitialized_escrow() {
+    let f = setup();
+    let escrow = LongEscrowClient::new(&f.env, &f.escrow_id);
+    let registry_id = f.env.register(fake_registry::FakeRegistry, ());
+
+    assert_eq!(
+        escrow
+            .try_register_with(&registry_id, &manifest(&f.env), &100_000, &500_000)
+            .err(),
+        Some(Ok(EscrowError::NotInitialized))
     );
 }

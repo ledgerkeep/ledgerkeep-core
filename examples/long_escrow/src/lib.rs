@@ -16,8 +16,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, token::TokenClient,
-    Address, Env, Vec,
+    contract, contractclient, contracterror, contractevent, contractimpl, contracttype,
+    token::TokenClient, Address, Bytes, Env, Vec,
 };
 
 use maintainable::{MaintainableError, MaintenanceState};
@@ -104,6 +104,26 @@ pub struct MilestoneReleased {
     pub seller: Address,
     pub index: u32,
     pub amount: i128,
+}
+
+/// The one registry entry point this escrow calls, declared as a client
+/// interface.
+///
+/// This is deliberately not a dependency on the `registry` crate. The registry
+/// is a contract, and linking a contract crate into another contract copies its
+/// exported functions and contract spec into the resulting wasm: the escrow
+/// would export `register`, `deregister`, `update` and a second
+/// `__constructor`, roughly tripling in size. Integrating against the interface
+/// instead is also what an outside adopter would do, since they will not have
+/// the registry's source.
+///
+/// The cost is that nothing checks this signature against the deployed
+/// registry. A mismatch compiles and fails at invocation. It must stay in step
+/// with `Registry::register`. Errors are declared away here — the generated
+/// `try_register` returns them; plain `register` reverts on them.
+#[contractclient(name = "RegistryClient")]
+pub trait Registrar {
+    fn register(env: Env, contract: Address, keys_xdr: Vec<Bytes>, threshold: u32, extend_to: u32);
 }
 
 // Adopt the maintenance standard: keep the persistent balance and milestone list
@@ -285,6 +305,46 @@ impl LongEscrow {
             amount,
         }
         .publish(&env);
+        Ok(())
+    }
+
+    /// Publish this escrow's maintenance manifest to a LedgerKeep registry.
+    ///
+    /// Callable by the buyer. The buyer's funds are the ones held here, so the
+    /// buyer is who loses if this contract's state is archived, and is who
+    /// decides where it is advertised for maintenance. Without that gate anyone
+    /// could make the escrow register itself under a manifest of their choosing.
+    ///
+    /// This has to be a function on the escrow rather than a CLI call.
+    /// `Registry::register` calls `require_auth()` on the address being
+    /// registered, and no private key exists for a contract address, so no
+    /// account can register a contract on its behalf. The cross-call below
+    /// originates inside the escrow, which makes
+    /// `env.current_contract_address()` the invoker and satisfies that check.
+    /// Every protocol adopting the standard needs a function shaped like this
+    /// one.
+    ///
+    /// `keys_xdr` is not checked here or by the registry. Nothing on-chain
+    /// verifies that it describes the keys the `impl_maintainable!` above
+    /// actually extends, so a caller can publish a manifest that has drifted
+    /// from the contract. `ledgerkeep-cli` is what catches that, by simulating
+    /// `extend_all` and diffing the TTLs it observes against the manifest.
+    ///
+    /// Errors `NotInitialized`. Registry errors (`AlreadyRegistered`,
+    /// `EmptyManifest`, `InvalidParams`) propagate from the cross-call and
+    /// revert this invocation.
+    pub fn register_with(
+        env: Env,
+        registry: Address,
+        keys_xdr: Vec<Bytes>,
+        threshold: u32,
+        extend_to: u32,
+    ) -> Result<(), EscrowError> {
+        let config = get_config(&env).ok_or(EscrowError::NotInitialized)?;
+        config.buyer.require_auth();
+
+        let this = env.current_contract_address();
+        RegistryClient::new(&env, &registry).register(&this, &keys_xdr, &threshold, &extend_to);
         Ok(())
     }
 
