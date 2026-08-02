@@ -1,4 +1,9 @@
+# 1.93.0, not 1.91.0. soroban-sdk 27.0.4 declares a 1.91.0 floor, but
+# `stellar contract build` refuses to build contracts with 1.91.0 — it is on the
+# CLI's blocklist of Rust versions with known bad wasm codegen, alongside 1.81,
+# 1.82 and 1.83. 1.93.0 clears the floor, is not blocklisted, and matches the
+# stellar-cli MSRV.
 [toolchain]
-channel = "1.91.0"
+channel = "1.93.0"
 targets = ["wasm32v1-none"]
 components = ["rustfmt", "clippy"]

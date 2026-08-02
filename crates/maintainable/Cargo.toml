@@ -2,7 +2,7 @@
 name = "maintainable"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.91.0"
+rust-version = "1.93.0"
 license = "Apache-2.0"
 description = "LedgerKeep maintenance standard: a library host contracts implement to expose permissionless self-maintenance."
 
