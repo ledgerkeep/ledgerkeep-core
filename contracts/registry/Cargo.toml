@@ -1,0 +1,17 @@
+[package]
+name = "registry"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91.0"
+license = "Apache-2.0"
+description = "LedgerKeep registry: a permissionless directory of contract maintenance manifests."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+maintainable = { path = "../../crates/maintainable" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
