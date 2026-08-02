@@ -4,8 +4,7 @@ members = [
     "crates/maintainable",
     "contracts/registry",
     "contracts/rent_vault",
-    # Added in their respective build steps:
-    # "examples/long_escrow",
+    "examples/long_escrow",
 ]
 
 [workspace.dependencies]

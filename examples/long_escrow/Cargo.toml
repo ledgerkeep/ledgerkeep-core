@@ -1,0 +1,17 @@
+[package]
+name = "long_escrow"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91.0"
+license = "Apache-2.0"
+description = "Example only: a milestone escrow that adopts the LedgerKeep maintenance standard. Not a product."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+maintainable = { path = "../../crates/maintainable" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
