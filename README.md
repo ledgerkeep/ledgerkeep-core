@@ -31,7 +31,7 @@ repository.
 | Item | Value |
 |---|---|
 | Rust edition | 2021 |
-| Minimum Rust | 1.84.0 |
+| Minimum Rust | 1.91.0 |
 | Build target | `wasm32v1-none` |
 | Build command | `stellar contract build` |
 | soroban-sdk | 27.0.4 |
