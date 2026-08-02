@@ -1,0 +1,17 @@
+[package]
+name = "rent_vault"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91.0"
+license = "Apache-2.0"
+description = "LedgerKeep rent vault: pre-funds contract maintenance and pays whoever performs it."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+maintainable = { path = "../../crates/maintainable" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

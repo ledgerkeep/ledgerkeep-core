@@ -3,8 +3,8 @@ resolver = "2"
 members = [
     "crates/maintainable",
     "contracts/registry",
+    "contracts/rent_vault",
     # Added in their respective build steps:
-    # "contracts/rent_vault",
     # "examples/long_escrow",
 ]
 
