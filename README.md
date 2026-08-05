@@ -198,7 +198,7 @@ one.
 
 | Name | Role | GitHub | Contact |
 |---|---|---|---|
-| Dillon Ofili | Maintainer | [@0dillon](https://github.com/0dillon) | `<CONTACT>` |
+| Dillon Ofili | Maintainer | [@0dillon](https://github.com/0dillon) | `dillonofili667@gmail.com |
 
 ## Contributors
 
