@@ -67,10 +67,20 @@ ESCROW_EXTEND_TO=500000
 ESCROW_AMOUNTS='["10000000","20000000"]'
 
 # What a keeper is paid per maintenance run, in stroops, and how often a claim
-# is allowed. The interval matches the escrow's maintenance threshold: there is
-# no reason to pay for maintenance more often than it is needed.
+# is allowed.
+#
+# The interval is the escrow's real maintenance period, which is the gap between
+# the two macro values and not `threshold` on its own: `extend_all` pushes the
+# TTL up to `extend_to` and then does nothing until it falls back to
+# `threshold`. With 500000 and 100000 that is 400000 ledgers. Deriving it here
+# keeps it right if the escrow's macro values change.
+#
+# Setting it shorter overpays, and nothing on-chain catches that. The vault caps
+# claims at one per interval, and `__lk_extend_all` records a maintenance run
+# whether or not it actually extended anything, so a claim made inside the real
+# period still passes all three of the vault's checks.
 VAULT_TIP=1000000
-VAULT_INTERVAL=100000
+VAULT_INTERVAL=$((ESCROW_EXTEND_TO - ESCROW_THRESHOLD))
 
 invoke() {
     local id="$1"
