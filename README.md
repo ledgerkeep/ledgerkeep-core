@@ -182,18 +182,23 @@ scripts/                 testnet deploy and init
 
 ## Contributing
 
-Issues and pull requests are welcome. Commits follow
-[Conventional Commits](https://www.conventionalcommits.org/) — `type(scope): description`, one
-logical change per commit. `cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings`
-and `stellar contract build` must all be clean before anything merges; CI enforces all three.
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the build steps, the
+commit format, and what a pull request needs to pass.
+
+The short version: commits follow [Conventional Commits](https://www.conventionalcommits.org/) —
+`type(scope): description`, one logical change per commit. `cargo fmt --all -- --check`,
+`cargo clippy --all-targets -- -D warnings`, `cargo test --all` and `stellar contract build` must
+all be clean before anything merges; CI enforces all four.
 
 The contracts are not audited. Do not use them on mainnet with real funds without your own review.
+To report a vulnerability, see [SECURITY.md](SECURITY.md) — please do not open a public issue for
+one.
 
 ## Maintainers
 
 | Name | Role | GitHub | Contact |
 |---|---|---|---|
-| Dillon Ofili | Maintainer | [@0dillon](https://github.com/0dillon) | — |
+| Dillon Ofili | Maintainer | [@0dillon](https://github.com/0dillon) | `<CONTACT>` |
 
 ## Contributors
 
