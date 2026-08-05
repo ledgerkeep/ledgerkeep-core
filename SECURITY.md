@@ -15,7 +15,7 @@ If you deploy any of this to mainnet, you are responsible for having it reviewed
 
 ## Reporting a vulnerability
 
-Email **<CONTACT>**. Do not open a public issue.
+Email **dillonofili667@gmail.com**. Do not open a public issue.
 
 Include whatever you have:
 
