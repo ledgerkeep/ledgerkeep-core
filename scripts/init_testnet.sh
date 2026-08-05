@@ -13,7 +13,11 @@
 #
 # Optional overrides, all defaulting to the source identity's own address:
 #
-#   LK_BUYER, LK_SELLER, LK_APPROVER, LK_VAULT_OWNER
+#   LK_SELLER, LK_APPROVER    Stored as escrow configuration. Any address works;
+#                             neither authorizes anything this script calls.
+#   LK_BUYER, LK_VAULT_OWNER  Both have to authorize a call below, so both must
+#                             be the source identity's own address. The script
+#                             checks this before it changes anything on-chain.
 #
 # No secret key appears in this script or its output.
 
@@ -97,6 +101,42 @@ BUYER="${LK_BUYER:-$SOURCE_ADDRESS}"
 SELLER="${LK_SELLER:-$SOURCE_ADDRESS}"
 APPROVER="${LK_APPROVER:-$SOURCE_ADDRESS}"
 VAULT_OWNER="${LK_VAULT_OWNER:-$SOURCE_ADDRESS}"
+
+# `stellar contract invoke` can only satisfy `require_auth()` for the identity it
+# signs with, and that is the source account. Two of the overrides name addresses
+# that have to authorize a call further down:
+#
+#   LK_BUYER        authorizes `register_with`, via config.buyer.require_auth()
+#   LK_VAULT_OWNER  authorizes `open`, via owner.require_auth()
+#
+# Pointing either at an address this identity does not hold the key to cannot
+# work from a single-signer script. That is checked here, before the first call
+# that changes anything, because the failure would otherwise land partway
+# through: `set -e` would abort at `register_with` with the escrow already
+# initialized, and initialize is one-shot, so a re-run hits AlreadyInitialized
+# and the only way forward is a fresh deploy.
+#
+# LK_SELLER and LK_APPROVER are deliberately not checked. They are stored as
+# escrow configuration and authorize nothing this script calls, so any address
+# is valid for them.
+for pair in "LK_BUYER:$BUYER" "LK_VAULT_OWNER:$VAULT_OWNER"; do
+    name="${pair%%:*}"
+    address="${pair#*:}"
+    if [ "$address" != "$SOURCE_ADDRESS" ]; then
+        echo "error: $name is set to" >&2
+        echo "         $address" >&2
+        echo "       but this script signs every call as '$SOURCE'" >&2
+        echo "         $SOURCE_ADDRESS" >&2
+        echo >&2
+        echo "$name has to authorize one of the calls below, and a single-signer" >&2
+        echo "invoke cannot produce a signature for an address it does not hold" >&2
+        echo "the key to. Either unset $name, or re-run this script with the" >&2
+        echo "identity that owns that address as the source." >&2
+        echo >&2
+        echo "Nothing has been changed on-chain." >&2
+        exit 1
+    fi
+done
 
 # Native XLM as the tip asset, via its Stellar Asset Contract.
 TOKEN_ID="$(stellar contract id asset --asset native --network "$NETWORK")"
