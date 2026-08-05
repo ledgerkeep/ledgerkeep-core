@@ -71,7 +71,6 @@ declare -A LABELS=(
     ["area: registry"]="5319e7|contracts/registry"
     ["area: rent_vault"]="5319e7|contracts/rent_vault"
     ["area: example"]="5319e7|examples/long_escrow"
-    ["area: scripts"]="5319e7|scripts/"
 )
 
 # Conventional-commit scope in the title -> area label suffix.
@@ -124,15 +123,6 @@ STACK_RUST=$(
 Rust (edition 2021, toolchain 1.93.0 pinned in `rust-toolchain.toml`), `soroban-sdk` 27.0.4,
 target `wasm32v1-none`. Build with `stellar contract build`, never `cargo build`. Tests are
 `#[cfg(test)]` modules on `Env::default()`; run them with `cargo test --all`.
-EOF
-)
-
-STACK_BASH=$(
-    cat <<'EOF'
-### Tech Stack
-
-Bash (`set -euo pipefail`), Stellar CLI 27.1.0. No secret key may appear in a script or its
-output; scripts take the source identity and network as arguments.
 EOF
 )
 
@@ -348,8 +338,9 @@ pick it, and the obvious guess is wrong.
 The maintenance period of a target is \`extend_to - threshold\`, not \`threshold\`. A contract with
 \`threshold: 100_000, extend_to: 500_000\` has its TTL pushed to 500,000 ledgers and does not need
 attention again until it falls to 100,000 — a gap of 400,000 ledgers. An owner who sets
-\`interval\` to \`threshold\` pays for four times as many claims as the target needs. This exact
-mistake is live in \`scripts/init_testnet.sh\` and is tracked separately.
+\`interval\` to \`threshold\` pays for four times as many claims as the target needs. That mistake was
+in \`scripts/init_testnet.sh\` until it was fixed by deriving the interval from the two macro values;
+the contract's own documentation still says nothing about it.
 
 ### Acceptance Criteria
 
@@ -471,62 +462,6 @@ not match what the contract does.
       values the contract does not honour.
 
 $STACK_RUST
-EOF
-
-# ──────────────────────────────── scripts ───────────────────────────────
-
-issue "fix(scripts): make the LK_BUYER and LK_VAULT_OWNER overrides work" \
-    "complexity: medium" "type: bug" <<EOF
-### Summary
-
-\`scripts/init_testnet.sh\` documents \`LK_BUYER\`, \`LK_SELLER\`, \`LK_APPROVER\` and \`LK_VAULT_OWNER\` as
-optional overrides, and reads them into variables. Every invocation is then signed with
-\`--source-account "\$SOURCE"\` and nothing else.
-
-So the overrides cannot work. Set \`LK_BUYER\` to any address the source identity does not control
-and the run reaches \`register_with\`, which calls \`config.buyer.require_auth()\`, and fails with no
-signer available. \`LK_VAULT_OWNER\` fails the same way at \`open\`.
-
-Because of \`set -euo pipefail\` the script aborts mid-run, leaving the escrow initialized and the
-vault uninitialized. Re-running fails on \`AlreadyInitialized\`, so there is no recovery short of
-redeploying.
-
-### Acceptance Criteria
-
-- [ ] The overrides either work — additional signers passed for the calls that need them — or they
-      are removed from the script and its header comment.
-- [ ] If they stay, the script checks up front that every override address is one the CLI can sign
-      for, and exits before making any state change if not.
-- [ ] The failure mode is documented: which steps have already run when a later one fails, and what
-      to do about it.
-- [ ] Verified against a real testnet run with an override set to a second identity.
-
-$STACK_BASH
-EOF
-
-issue "fix(scripts): set VAULT_INTERVAL from extend_to minus threshold" \
-    "complexity: low" "type: bug" <<EOF
-### Summary
-
-\`scripts/init_testnet.sh\` sets \`VAULT_INTERVAL=100000\` with the comment "The interval matches the
-escrow's maintenance threshold: there is no reason to pay for maintenance more often than it is
-needed."
-
-The reasoning is wrong. \`extend_all\` pushes the TTL to \`extend_to\` (500,000) and does nothing until
-it drops back to \`threshold\` (100,000). The real maintenance period is the gap between them —
-400,000 ledgers. An interval of 100,000 lets a keeper claim four tips per period, and since
-\`__lk_extend_all\` writes maintenance state whether or not it extended anything, all four claims
-pass the vault's checks. The demo overpays by 4x and reads as if that were intentional.
-
-### Acceptance Criteria
-
-- [ ] \`VAULT_INTERVAL\` is derived as \`ESCROW_EXTEND_TO - ESCROW_THRESHOLD\` rather than hardcoded, so
-      it cannot drift when the escrow's macro values change.
-- [ ] The comment states the relationship correctly.
-- [ ] The read-back at the end of the script shows the resulting interval.
-- [ ] Cross-referenced with the vault documentation issue so the two agree.
-
-$STACK_BASH
 EOF
 
 # ─────────────────────────────────────────────────────────────────────────
