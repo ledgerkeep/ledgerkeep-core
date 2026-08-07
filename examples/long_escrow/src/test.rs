@@ -1,7 +1,7 @@
 use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
+    testutils::{Address as _, Ledger as _, MockAuth, MockAuthInvoke},
     token::{StellarAssetClient, TokenClient},
-    Address, Bytes, Env, Vec,
+    Address, Bytes, Env, IntoVal, Vec,
 };
 
 use crate::{EscrowError, LongEscrow, LongEscrowClient};
@@ -246,6 +246,87 @@ fn register_with_needs_the_buyers_authorization() {
         .try_register_with(&registry_id, &manifest(&f.env), &100_000, &500_000)
         .is_err());
     assert_eq!(registry.last(), None);
+}
+
+/// The invocation `register_with` authorizes: the escrow calling itself with
+/// the registry's arguments. `buyer.require_auth()` (no args) authorizes the
+/// current frame, so the mocked entry has to name the escrow, the function and
+/// exactly the arguments the call passes.
+fn register_with_invocation<'a>(
+    f: &'a Fixture,
+    registry_id: &Address,
+    keys: &Vec<Bytes>,
+) -> MockAuthInvoke<'a> {
+    MockAuthInvoke {
+        contract: &f.escrow_id,
+        fn_name: "register_with",
+        args: soroban_sdk::vec![
+            &f.env,
+            registry_id.clone().into_val(&f.env),
+            keys.clone().into_val(&f.env),
+            100_000_u32.into_val(&f.env),
+            500_000_u32.into_val(&f.env),
+        ],
+        sub_invokes: &[],
+    }
+}
+
+#[test]
+fn register_with_rejects_non_buyer_authorizations() {
+    let f = setup();
+    let escrow = LongEscrowClient::new(&f.env, &f.escrow_id);
+    escrow.initialize(&f.buyer, &f.seller, &f.approver, &f.token, &amounts(&f.env));
+
+    let registry_id = f.env.register(fake_registry::FakeRegistry, ());
+    let registry = fake_registry::FakeRegistryClient::new(&f.env, &registry_id);
+
+    // Authorize the seller and a wholly unrelated account, but not the buyer.
+    // The buyer's `require_auth()` has nothing to satisfy it, so the call fails
+    // before the escrow ever reaches the registry.
+    let unrelated = Address::generate(&f.env);
+    let keys = manifest(&f.env);
+    let invoke = register_with_invocation(&f, &registry_id, &keys);
+    assert!(escrow
+        .mock_auths(&[
+            MockAuth {
+                address: &f.seller,
+                invoke: &invoke,
+            },
+            MockAuth {
+                address: &unrelated,
+                invoke: &invoke,
+            },
+        ])
+        .try_register_with(&registry_id, &keys, &100_000, &500_000)
+        .is_err());
+    assert_eq!(registry.last(), None);
+}
+
+#[test]
+fn register_with_succeeds_with_only_the_buyers_authorization() {
+    let f = setup();
+    let escrow = LongEscrowClient::new(&f.env, &f.escrow_id);
+    escrow.initialize(&f.buyer, &f.seller, &f.approver, &f.token, &amounts(&f.env));
+
+    let registry_id = f.env.register(fake_registry::FakeRegistry, ());
+    let registry = fake_registry::FakeRegistryClient::new(&f.env, &registry_id);
+
+    // Drop the blanket mock the fixture installs and authorize the buyer alone.
+    // The buyer is the address the escrow's `require_auth()` names, so this is
+    // the only authorization the call needs.
+    let keys = manifest(&f.env);
+    escrow
+        .mock_auths(&[MockAuth {
+            address: &f.buyer,
+            invoke: &register_with_invocation(&f, &registry_id, &keys),
+        }])
+        .register_with(&registry_id, &keys, &100_000, &500_000);
+
+    let call = registry.last().unwrap();
+    assert_eq!(call.contract, f.escrow_id);
+    assert_eq!(call.keys_xdr, keys);
+    assert_eq!(call.threshold, 100_000);
+    assert_eq!(call.extend_to, 500_000);
 }
 
 #[test]
