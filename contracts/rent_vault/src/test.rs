@@ -259,3 +259,69 @@ fn balance_accounting_across_fund_claim_withdraw() {
         Some(Ok(VaultError::InsufficientBalance))
     );
 }
+
+#[test]
+fn claim_rejects_underfunded_vault() {
+    let f = setup();
+    let vault = RentVaultClient::new(&f.env, &f.vault_id);
+    let token = TokenClient::new(&f.env, &f.token);
+    let sac = StellarAssetClient::new(&f.env, &f.token);
+
+    let owner = Address::generate(&f.env);
+    let keeper = Address::generate(&f.env);
+    sac.mint(&owner, &1_000);
+
+    // Fund with less than the tip, so the vault cannot pay out in full.
+    vault.open(&f.target_id, &owner, &100, &10);
+    vault.fund(&f.target_id, &owner, &50);
+    assert_eq!(vault.get_vault(&f.target_id).unwrap().balance, 50);
+
+    // Real maintenance: advance a full interval, then the keeper maintains.
+    f.env.ledger().with_mut(|li| li.sequence_number += 10);
+    let target = target::TargetClient::new(&f.env, &f.target_id);
+    target.extend_all(&keeper);
+
+    let before = vault.get_vault(&f.target_id).unwrap().last_claim;
+    assert_eq!(
+        vault.try_claim(&f.target_id, &keeper).err(),
+        Some(Ok(VaultError::InsufficientBalance))
+    );
+
+    // Nothing was paid, and the vault kept every token it held.
+    let v = vault.get_vault(&f.target_id).unwrap();
+    assert_eq!(v.balance, 50);
+    assert_eq!(v.last_claim, before);
+    assert_eq!(token.balance(&keeper), 0);
+    assert_eq!(token.balance(&f.vault_id), 50);
+}
+
+#[test]
+fn claim_at_exact_tip_balance() {
+    let f = setup();
+    let vault = RentVaultClient::new(&f.env, &f.vault_id);
+    let token = TokenClient::new(&f.env, &f.token);
+    let sac = StellarAssetClient::new(&f.env, &f.token);
+
+    let owner = Address::generate(&f.env);
+    let keeper = Address::generate(&f.env);
+    sac.mint(&owner, &1_000);
+
+    // Fund exactly the tip: the boundary case for the balance check.
+    vault.open(&f.target_id, &owner, &100, &10);
+    vault.fund(&f.target_id, &owner, &100);
+    assert_eq!(vault.get_vault(&f.target_id).unwrap().balance, 100);
+
+    f.env.ledger().with_mut(|li| li.sequence_number += 10);
+    let target = target::TargetClient::new(&f.env, &f.target_id);
+    target.extend_all(&keeper);
+
+    let paid = vault.claim(&f.target_id, &keeper);
+    assert_eq!(paid, 100);
+    assert_eq!(token.balance(&keeper), 100);
+
+    // The vault paid out its entire balance and advanced the interval clock.
+    let v = vault.get_vault(&f.target_id).unwrap();
+    assert_eq!(v.balance, 0);
+    assert_eq!(v.last_claim, f.env.ledger().sequence());
+    assert_eq!(token.balance(&f.vault_id), 0);
+}
